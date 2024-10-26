@@ -8,11 +8,10 @@ export class SortedStringTable {
   }
 
   // improvement: binary search
-  async get(key) {
+  async find(key) {
     if (!key) {
       return null;
     }
-
     let val = null;
     try {
       const f = await open(this.filename);

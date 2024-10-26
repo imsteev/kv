@@ -1,85 +1,148 @@
 import fs from "fs/promises";
+import fsSync from "fs";
+import os from "os";
 
+import { SortedStringTable } from "./sstable.js";
 import path from "path";
-
-const IN_MEMORY_LIMIT_BYTES = 4000;
 
 export class LSMTree {
   // does this tree need to know where the files go?
   constructor({ initialState, dataFolder, levelPrefix }) {
-    this.primary = initialState || {};
+    this.memtable = initialState || {};
     this.dataFolder = dataFolder;
     this.levelPrefix = levelPrefix;
   }
 
+  get prefixPath() {
+    return path.join(this.dataFolder, this.levelPrefix);
+  }
   // looks in-memory first, if not found will look at sstables on disk.
   async get(key) {
-    if (key in this.primary) {
-      return this.primary[key];
+    if (key in this.memtable) {
+      return this.memtable[key];
     }
 
-    for (const st of this.sstables) {
-      const val = await st.get(key);
-      if (val !== null) {
-        return val;
-      }
-    }
+    // for (const st of this.sstables) {
+    //   const val = await st.get(key);
+    //   if (val !== null) {
+    //     return val;
+    //   }
+    // }
 
-    return null;
+    let val = null;
+    for await (const filename of fs.glob(this.prefixPath)) {
+      const st = new SortedStringTable(filename, ":");
+      try {
+        val = await st.find(key);
+        if (val !== null) {
+          console.log("found in " + filename);
+          return val;
+        }
+      } catch {}
+    }
   }
 
-  async put(key, value) {
-    this.primary[key] = value;
-    // todo: flush to disk if size gets too big
+  // todo: make this more robust.
+  put(key, value) {
+    // how to do concurrent writing properly? this is fine if the caller calls await, but if not, basically a whole bunch of the async functions get called, so everything gets put into memtable. then once they settle, we flush many times.
+    this.memtable[key] = value;
   }
 
   // factory function to load from disk. will always load from the first level.
   static async load(folder, prefix) {
-    const firstLevel = path.join(folder, prefix + ".0");
+    const firstLevel = getLevelPath(folder, prefix, 0);
     try {
       await fs.access(firstLevel);
     } catch {
       return new LSMTree({ dataFolder: folder, levelPrefix: prefix });
     }
 
-    // file exists. populate in-memory primary.
+    // file exists. populate in-memory memtable.
     const f = await fs.open(firstLevel);
-    const primary = {};
+    const memtable = {};
     for await (const line of f.readLines()) {
       const [k, v] = getKeyValue(line, ":");
-      primary[k] = v;
+      memtable[k] = v;
     }
 
     return new LSMTree({
-      initialState: primary,
+      initialState: memtable,
       dataFolder: folder,
       levelPrefix: prefix,
     });
   }
 
-  static async flush(lsmTree, folder, prefix, delim = ":") {
+  // if levelFile is empty, this just writes the memtable straight to levelFile
+  // otherwise, memtable gets merge-sorted in.
+  /**
+   *
+   * @param {*} levelFile fs.FileHandle
+   * @returns
+   */
+  async merge(levelFile) {
+    const entries = Object.entries(this.memtable);
+
     try {
-      await incrementLevels(folder, prefix);
+      const lf = await fs.readFile(levelFile, { encoding: "utf-8" });
+      const lines = lf.split("\n");
+      const sorted = [];
+      let i = 0;
+      let j = 0;
+      while (i < lines.length || j < entries.length) {
+        if (i < lines.length && j < entries.length) {
+          const kv = getKeyValue(lines[i], ":");
+          if (!kv) {
+            i++;
+            continue;
+          }
+          const [k, v] = kv;
+          if (
+            k.localeCompare(entries[j][0], undefined, { numeric: true }) <= 0
+          ) {
+            sorted.push([k, v]);
+            i++;
+          } else {
+            sorted.push(entries[j]);
+            j++;
+          }
+        } else if (i < lines.length) {
+          sorted.push(lines[i]);
+          i++;
+        } else {
+          sorted.push(entries[j]);
+          j++;
+        }
+      }
+      return fs.writeFile(
+        levelFile,
+        sorted.map(([k, v]) => `${k}:${v}\n`)
+      );
     } catch (err) {
-      console.log("could not increment filenames.");
-      throw err;
+      console.log(err);
+      entries.sort((a, b) =>
+        a[0].localeCompare(b[0], undefined, { numeric: true })
+      );
+      return fs.appendFile(
+        getLevelPath(this.dataFolder, this.levelPrefix, 0),
+        entries.map(([k, v]) => `${k}:${v}\n`)
+      );
     }
-    const entries = Object.entries(lsmTree.primary);
-    entries.sort((a, b) => a[0].localeCompare(b[0]));
-    return fs.appendFile(
-      path.join(folder, `${prefix}.0`),
-      entries.map(([k, v]) => `${k}${delim}${v}\n`)
-    );
   }
 }
 
-function getKeyValue(line, delim) {
-  const index = line.indexOf(delim);
-  if (index == -1) {
+// e.g returns "dataFolder/{prefix}.0" or "dataFolder/{prefix}.1" or ...
+function getLevelPath(folder, prefix, i) {
+  return path.join(folder, prefix + "." + i);
+}
+
+const getKeyValue = (line, delim = ":") => {
+  const i = line.indexOf(delim);
+  if (i === -1) {
+    console.log("wot");
     return null;
   }
-  return [line.slice(0, index), line.slice(index + 1)];
-}
+  return [line.slice(0, i), line.slice(i + 1)];
+};
 
 export async function incrementLevels(folder, prefix = "kvdb") {
   for (let i = 10; i >= 0; i--) {

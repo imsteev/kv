@@ -2,13 +2,9 @@ import { LSMTree } from "./lsm/index.js";
 
 const store = await LSMTree.load("./data", "kvdb");
 
-await store.put(1, 2);
-await store.put(2, 2);
-await store.put(3, 2);
+for (let i = 0; i < 100; i++) {
+  const key = Math.trunc(Math.random() * 1_000);
+  store.put(key, i * 10);
+}
 
-await LSMTree.flush(store, "./data", "kvdb");
-
-process.on("SIGINT", () => {
-  console.log("interrupted! shutting down");
-  process.exit();
-});
+await store.merge("./data/kvdb.0");
