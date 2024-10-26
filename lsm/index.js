@@ -1,6 +1,4 @@
 import fs from "fs/promises";
-import fsSync from "fs";
-import os from "os";
 
 import { SortedStringTable } from "./sstable.js";
 import path from "path";
@@ -21,25 +19,16 @@ export class LSMTree {
     if (key in this.memtable) {
       return this.memtable[key];
     }
-
-    // for (const st of this.sstables) {
-    //   const val = await st.get(key);
-    //   if (val !== null) {
-    //     return val;
-    //   }
-    // }
-
     let val = null;
     for await (const filename of fs.glob(this.prefixPath)) {
-      const st = new SortedStringTable(filename, ":");
-      try {
-        val = await st.find(key);
-        if (val !== null) {
-          console.log("found in " + filename);
-          return val;
-        }
-      } catch {}
+      const st = new SortedStringTable(filename);
+      val = await st.find(key);
+      if (val !== null) {
+        console.log("found in " + filename);
+        return val;
+      }
     }
+    return null;
   }
 
   // todo: make this more robust.

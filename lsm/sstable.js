@@ -25,7 +25,7 @@ export class SortedStringTable {
     } catch (err) {
       throw err;
     } finally {
-      f.close();
+      await f.close();
     }
     return val;
   }

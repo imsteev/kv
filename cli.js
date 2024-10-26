@@ -8,3 +8,4 @@ for (let i = 0; i < 100; i++) {
 }
 
 await store.merge("./data/kvdb.0");
+await store.get(25);
