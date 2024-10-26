@@ -7,6 +7,7 @@ export class SortedStringTable {
     this.delimiter = delimiter;
   }
 
+  // improvement: binary search
   async get(key) {
     if (!key) {
       return null;
@@ -22,17 +23,11 @@ export class SortedStringTable {
           break;
         }
       }
+    } catch (err) {
+      throw err;
     } finally {
       f.close();
     }
     return val;
   }
-
-  /**
-   *
-   * @param {*} s1 key-value file sorted by key
-   * @param {*} s2 key-value file sorted by key
-   * @param {*} target
-   */
-  static merge(s1, s2, target) {}
 }

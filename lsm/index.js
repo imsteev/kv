@@ -35,22 +35,19 @@ export class LSMTree {
 
   // factory function to load from disk. will always load from the first level.
   static async load(folder, prefix) {
-    const primary = {};
     const firstLevel = path.join(folder, prefix + ".0");
     try {
       await fs.access(firstLevel);
     } catch {
       return new LSMTree({ dataFolder: folder, levelPrefix: prefix });
     }
+
+    // file exists. populate in-memory primary.
     const f = await fs.open(firstLevel);
+    const primary = {};
     for await (const line of f.readLines()) {
-      try {
-        const [k, v] = getKeyValue(line, ":");
-        this.primary[k] = v;
-      } catch {
-        console.log("could not read line. file may be corrupted!");
-        continue;
-      }
+      const [k, v] = getKeyValue(line, ":");
+      primary[k] = v;
     }
 
     return new LSMTree({
@@ -60,7 +57,7 @@ export class LSMTree {
     });
   }
 
-  static async flush(lsmTree, folder, prefix) {
+  static async flush(lsmTree, folder, prefix, delim = ":") {
     try {
       await incrementLevels(folder, prefix);
     } catch (err) {
@@ -71,7 +68,7 @@ export class LSMTree {
     entries.sort((a, b) => a[0].localeCompare(b[0]));
     return fs.appendFile(
       path.join(folder, `${prefix}.0`),
-      entries.map(([k, v]) => `${k}=${v}\n`)
+      entries.map(([k, v]) => `${k}${delim}${v}\n`)
     );
   }
 }
