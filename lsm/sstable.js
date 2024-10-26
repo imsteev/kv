@@ -12,21 +12,20 @@ export class SortedStringTable {
     if (!key) {
       return null;
     }
+    let f;
     let val = null;
     try {
-      const f = await open(this.filename);
+      f = await open(this.filename);
       for await (const line of f.readLines()) {
         const i = line.indexOf(this.delimiter);
         if (i != -1 && line.slice(0, i) == key) {
-          val = line.slice(i + 1);
-          break;
+          return line.slice(i + 1);
         }
       }
-    } catch (err) {
-      throw err;
     } finally {
-      await f.close();
+      await f?.close();
     }
-    return val;
   }
+
+  async write(data) {}
 }

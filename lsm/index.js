@@ -4,7 +4,6 @@ import { SortedStringTable } from "./sstable.js";
 import path from "path";
 
 export class LSMTree {
-  // does this tree need to know where the files go?
   constructor({ initialState, dataFolder, levelPrefix }) {
     this.memtable = initialState || {};
     this.dataFolder = dataFolder;
@@ -28,26 +27,36 @@ export class LSMTree {
         return val;
       }
     }
-    return null;
+    return val;
   }
 
   // todo: make this more robust.
-  put(key, value) {
+  async put(key, value) {
     // how to do concurrent writing properly? this is fine if the caller calls await, but if not, basically a whole bunch of the async functions get called, so everything gets put into memtable. then once they settle, we flush many times.
     this.memtable[key] = value;
   }
 
-  // factory function to load from disk. will always load from the first level.
+  /**
+   * load will load an SSTable from disk, if it exists. otherwise returns an
+   * empty tree.
+   * @param {*} folder
+   * @param {*} prefix
+   * @returns
+   */
   static async load(folder, prefix) {
-    const firstLevel = getLevelPath(folder, prefix, 0);
+    let f;
     try {
-      await fs.access(firstLevel);
+      const firstLevel = getLevelPath(folder, prefix, 0);
+      f = await fs.open(firstLevel);
     } catch {
-      return new LSMTree({ dataFolder: folder, levelPrefix: prefix });
+      return new LSMTree({
+        initialState: {},
+        dataFolder: folder,
+        levelPrefix: prefix,
+      });
     }
 
     // file exists. populate in-memory memtable.
-    const f = await fs.open(firstLevel);
     const memtable = {};
     for await (const line of f.readLines()) {
       const [k, v] = getKeyValue(line, ":");
@@ -61,16 +70,14 @@ export class LSMTree {
     });
   }
 
-  // if levelFile is empty, this just writes the memtable straight to levelFile
-  // otherwise, memtable gets merge-sorted in.
   /**
-   *
-   * @param {*} levelFile fs.FileHandle
+   * merge merges the memtable to levelFile, in merge-sorted fashion. if levelFile
+   * exists, assumes it is sorted by key.
+   * @param {*} levelFile
    * @returns
    */
   async merge(levelFile) {
     const entries = Object.entries(this.memtable);
-
     try {
       const lf = await fs.readFile(levelFile, { encoding: "utf-8" });
       const lines = lf.split("\n");
@@ -107,7 +114,6 @@ export class LSMTree {
         sorted.map(([k, v]) => `${k}:${v}\n`)
       );
     } catch (err) {
-      console.log(err);
       entries.sort((a, b) =>
         a[0].localeCompare(b[0], undefined, { numeric: true })
       );
@@ -127,19 +133,7 @@ function getLevelPath(folder, prefix, i) {
 const getKeyValue = (line, delim = ":") => {
   const i = line.indexOf(delim);
   if (i === -1) {
-    console.log("wot");
     return null;
   }
   return [line.slice(0, i), line.slice(i + 1)];
 };
-
-export async function incrementLevels(folder, prefix = "kvdb") {
-  for (let i = 10; i >= 0; i--) {
-    try {
-      const oldName = path.join(folder, `${prefix}.${i}`);
-      const newName = path.join(folder, `${prefix}.${i + 1}`);
-      await fs.access(path.join(folder, `${prefix}.${i}`));
-      await fs.rename(oldName, newName);
-    } catch {}
-  }
-}
