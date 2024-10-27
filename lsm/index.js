@@ -10,7 +10,8 @@ export class LSMTree {
     levelPrefix,
     flushIntervalMs,
 
-    // note: this is more of a "soft" max. there are some concurrency things to iron out to truly respect this number.
+    // this is more of a "soft" max. there are some concurrency things to iron
+    // out to truly respect this number.
     memtableMaxItems = 10_000,
   }) {
     // Every LSMTree is associated with a folder on disk. persistent data are
@@ -20,11 +21,9 @@ export class LSMTree {
     this.dataFolder = dataFolder;
     this.levelPrefix = levelPrefix;
 
-    // active, in-memory dataset
     this.memtable = initialState || {};
     this.memtableMaxItems = memtableMaxItems;
 
-    // periodically the LSMTree will flush data if the memtable is too large.
     this.flushMemtable = {};
     this.isFlushing = false;
 
@@ -54,39 +53,12 @@ export class LSMTree {
   }
 
   /**
-   *
+   * put your data in here! how to support numbers?
    * @param {string} key
    * @param {string} value
    */
   async put(key, value) {
     this.memtable[key] = value;
-  }
-
-  /**
-   * load will load an SSTable from disk, if it exists. otherwise returns an
-   * empty tree.
-   * @param {string} folder
-   * @param {string} prefix
-   */
-  async load(level = 0) {
-    let f;
-    try {
-      f = await fs.open(this.levelPath(level));
-    } catch {
-      console.log("level file doesn't exist, nothing to load.");
-      return;
-    }
-
-    // file exists. populate memtable.
-    for await (const line of f.readLines()) {
-      const i = line.indexOf(":");
-      if (i === -1) {
-        continue;
-      }
-      const key = line.slice(0, i);
-      const val = line.slice(i + 1);
-      this.memtable[key] = val;
-    }
   }
 
   /**
@@ -155,6 +127,6 @@ export class LSMTree {
   }
 
   levelPath(i) {
-    return this.prefixPath + "." + i;
+    return `${this.prefixPath}.${i}`;
   }
 }
