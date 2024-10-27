@@ -4,10 +4,18 @@ import { SortedStringTable } from "./sstable.js";
 import path from "path";
 
 export class LSMTree {
-  constructor({ initialState, dataFolder, levelPrefix }) {
-    this.memtable = initialState || {};
+  constructor({ initialState, dataFolder, levelPrefix, flushIntervalMs }) {
     this.dataFolder = dataFolder;
     this.levelPrefix = levelPrefix;
+
+    this.memtable = initialState || {};
+    this.flushMemtable = {};
+
+    this.isFlushing = false;
+
+    setInterval(async () => {
+      await this.flush();
+    }, flushIntervalMs);
   }
 
   // looks in-memory first, if not found will look at sstables on disk.
@@ -58,20 +66,38 @@ export class LSMTree {
     }
   }
 
-  async flush() {
-    const keyVals = Object.entries(this.memtable);
+  // flush flushes memtable to disk. newer files have lower numbers (this makes
+  // it easier on LSMTree code since you don't have to track how many files there
+  // are).
+  async flush(level = 0) {
+    console.log({
+      isFlushing: this.isFlushing,
+      length: Object.keys(this.memtable).length,
+    });
+    if (this.isFlushing || Object.keys(this.memtable).length < 50) {
+      return;
+    }
+    this.isFlushing = true;
+    const tmp = this.memtable;
+    this.memtable = {};
+    this.flushMemtable = tmp;
+    const keyVals = Object.entries(this.flushMemtable);
     keyVals.sort((a, b) =>
       a[0].localeCompare(b[0], undefined, { numeric: true })
     );
-    return fs.writeFile(
-      this.levelPath(0),
-      keyVals
-        .map(([k, v]) => {
-          return `${k}:${v}`;
-        })
-        .join("\n"),
-      { encoding: "utf-8" }
-    );
+    console.log("flushing!");
+    try {
+      await fs.appendFile(
+        this.levelPath(level),
+        keyVals.map(([k, v]) => {
+          return `${k}:${v}\n`;
+        }),
+        { encoding: "utf-8" }
+      );
+    } finally {
+      this.isFlushing = false;
+      this.flushMemtable = {};
+    }
   }
 
   async incrementLevels() {

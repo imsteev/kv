@@ -29,7 +29,7 @@ export class SortedStringTable {
     return val;
   }
 
-  async mergeKeyVals(keyVals) {
+  async merge(keyVals) {
     keyVals.sort((a, b) =>
       a[0].localeCompare(b[0], undefined, { numeric: true })
     );
