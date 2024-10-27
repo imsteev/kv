@@ -1,4 +1,4 @@
-import { open } from "fs/promises";
+import { appendFile, open, readFile, writeFile } from "fs/promises";
 
 // SSTable should handle reading from a file.
 export class SortedStringTable {
@@ -25,7 +25,67 @@ export class SortedStringTable {
     } finally {
       await f?.close();
     }
+
+    return val;
   }
 
-  async write(data) {}
+  async mergeKeyVals(keyVals) {
+    keyVals.sort((a, b) =>
+      a[0].localeCompare(b[0], undefined, { numeric: true })
+    );
+
+    let lf;
+    try {
+      lf = await readFile(this.filename, { encoding: "utf-8" });
+    } catch {
+      return appendFile(
+        this.filename,
+        keyVals
+          .map(([k, v]) => {
+            return `${k}:${v}`;
+          })
+          .join("\n"),
+        { encoding: "utf-8" }
+      );
+    }
+    let i = 0;
+    let j = 0;
+    const lines = lf.split("\n");
+    const sorted = [];
+    while (j < keyVals.length) {
+      if (i < lines.length && j < keyVals.length) {
+        const line = lines[i];
+        const idx = line.indexOf(":");
+        if (idx === -1) {
+          i++;
+          continue;
+        }
+
+        const k = line.slice(0, idx);
+        const v = line.slice(idx + 1);
+        if (k == undefined) {
+          console.log("UNDEFINED");
+        }
+        if (k.localeCompare(keyVals[j][0], undefined, { numeric: true }) <= 0) {
+          // todo: handle duplicates
+          sorted.push([k, v]);
+          i++;
+        } else {
+          sorted.push(keyVals[j++]);
+        }
+      } else if (j < keyVals.length) {
+        sorted.push(keyVals[j++]);
+      }
+    }
+
+    return writeFile(
+      this.filename,
+      sorted
+        .map(([k, v]) => {
+          return `${k}:${v}`;
+        })
+        .join("\n"),
+      { encoding: "utf-8" }
+    );
+  }
 }
