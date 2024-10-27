@@ -1,7 +1,7 @@
 import fs from "fs/promises";
+import path from "path";
 
 import { SortedStringTable } from "./sstable.js";
-import path from "path";
 
 export class LSMTree {
   constructor({
