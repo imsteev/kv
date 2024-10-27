@@ -1,4 +1,4 @@
-import { appendFile, open, readFile, writeFile } from "fs/promises";
+import { appendFile, open, readFile, writeFile, rename } from "fs/promises";
 
 // SSTable should handle reading from a file.
 export class SortedStringTable {
@@ -52,7 +52,7 @@ export class SortedStringTable {
     let j = 0;
     const lines = lf.split("\n");
     const sorted = [];
-    while (j < keyVals.length) {
+    while (i < lines.length && j < keyVals.length) {
       if (i < lines.length && j < keyVals.length) {
         const line = lines[i];
         const idx = line.indexOf(":");

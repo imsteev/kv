@@ -7,4 +7,5 @@ for (let i = 0; i < 25; i++) {
   lsmTree.put(key, i * 10);
 }
 
-await lsmTree.mergeIntoLevel(0);
+await lsmTree.incrementLevels();
+await lsmTree.flush();

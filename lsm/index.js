@@ -58,19 +58,28 @@ export class LSMTree {
     }
   }
 
-  /**
-   * merge merges the memtable to levelFile, in merge-sorted fashion. if levelFile
-   * exists, assumes it is sorted by key.
-   * @param {*} level int
-   */
-  async mergeIntoLevel(level) {
-    const entries = Object.entries(this.memtable);
-    const st = new SortedStringTable(this.levelPath(level));
-    try {
-      await st.mergeKeyVals(entries);
-    } catch (err) {
-      console.log("failed to merge");
-      throw err;
+  async flush() {
+    const keyVals = Object.entries(this.memtable);
+    keyVals.sort((a, b) =>
+      a[0].localeCompare(b[0], undefined, { numeric: true })
+    );
+    return fs.writeFile(
+      this.levelPath(0),
+      keyVals
+        .map(([k, v]) => {
+          return `${k}:${v}`;
+        })
+        .join("\n"),
+      { encoding: "utf-8" }
+    );
+  }
+
+  async incrementLevels() {
+    let i = 100;
+    for (let i = 100; i >= 0; i--) {
+      try {
+        await fs.rename(this.levelPath(i), this.levelPath(i + 1));
+      } catch {}
     }
   }
 
